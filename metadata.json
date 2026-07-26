@@ -1,0 +1,6 @@
+{
+  "name": "LifeMate AI",
+  "description": "All-in-one AI assistant for students, teachers, job seekers, professionals, parents, and general users.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
