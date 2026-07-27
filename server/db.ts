@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { User, Conversation, Message, Task, Document, StudySession } from '../src/types.js';
+import { User, Conversation, Message, Task, Document, StudySession } from '../src/types';
 
 export interface DBUser extends User {
   passwordHash: string;

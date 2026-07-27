@@ -6,10 +6,16 @@ import http from 'http';
 import path from 'path';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
-import { loadDB, saveDB, hashPassword, verifyPassword, DBUser } from './server/db.js';
-import { User, Conversation, Message, Task, Document, StudySession, UserSettings } from './src/types.js';
+import { loadDB, saveDB, hashPassword, verifyPassword, DBUser } from './server/db';
+import { User, Conversation, Message, Task, Document, StudySession, UserSettings } from './src/types';
+
+function generateId(prefix: string = 'id'): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Math.random().toString(36).substring(2, 11)}_${Date.now().toString(36)}`;
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'lifemate_jwt_secret_key_2026';
 const PORT = 3000;
@@ -281,7 +287,7 @@ app.post('/api/auth/register', (req, res) => {
 
     // Generate 6-digit verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const userId = 'user_' + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36));
+    const userId = generateId('user');
 
     const newUser: DBUser = {
       id: userId,
@@ -550,7 +556,7 @@ app.post('/api/tasks', authenticateToken, (req: AuthenticatedRequest, res: Respo
   }
 
   const newTask: Task = {
-    id: 'task_' + crypto.randomUUID(),
+    id: generateId('task'),
     userId: req.user!.id,
     title,
     description: description || '',
@@ -616,7 +622,7 @@ app.get('/api/conversations', authenticateToken, (req: AuthenticatedRequest, res
 
 app.post('/api/conversations', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
   const newConv: Conversation = {
-    id: 'conv_' + crypto.randomUUID(),
+    id: generateId('conv'),
     userId: req.user!.id,
     title: req.body.title || 'New Conversation',
     createdAt: new Date().toISOString(),
@@ -681,7 +687,7 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: Authe
 
   // Create user message
   const userMsg: Message = {
-    id: 'msg_' + crypto.randomUUID(),
+    id: generateId('msg'),
     conversationId: convId,
     userId: req.user!.id,
     role: 'user',
@@ -942,7 +948,7 @@ app.post('/api/study-sessions', authenticateToken, (req: AuthenticatedRequest, r
   }
 
   const newSession: StudySession = {
-    id: 'study_' + crypto.randomUUID(),
+    id: generateId('study'),
     userId: req.user!.id,
     topic,
     contentType,
@@ -1034,7 +1040,7 @@ app.post('/api/documents', authenticateToken, (req: AuthenticatedRequest, res: R
   }
 
   const newDoc: Document = {
-    id: 'doc_' + crypto.randomUUID(),
+    id: generateId('doc'),
     userId: req.user!.id,
     docType,
     title,
@@ -1070,16 +1076,21 @@ async function startServer() {
   const server = http.createServer(app);
 
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: {
-          server,
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: {
+            server,
+          },
         },
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn('Vite dev middleware dynamic load skipped/failed:', viteErr);
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
