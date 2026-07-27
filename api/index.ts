@@ -3,18 +3,26 @@ import app from '../server';
 
 export default function handler(req: any, res: any) {
   return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 8000);
+    const cleanup = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
+
     // Resolve promise when serverless response finishes or closes
-    res.on('finish', resolve);
-    res.on('close', resolve);
+    res.on('finish', cleanup);
+    res.on('close', cleanup);
     res.on('error', (err: any) => {
       console.error('Vercel serverless response stream error:', err);
-      resolve(null);
+      cleanup();
     });
 
     try {
       // 1. Resolve original URL from Vercel proxy headers if present
       const originalUrl =
         req.headers?.['x-forwarded-uri'] ||
+        req.headers?.['x-invoke-path'] ||
+        req.headers?.['x-matched-path'] ||
         req.headers?.['x-real-url'] ||
         req.headers?.['x-original-url'] ||
         req.url;
@@ -45,9 +53,8 @@ export default function handler(req: any, res: any) {
         res.status(500).json({
           error: error?.message || 'A server error occurred during function invocation.',
         });
-      } else {
-        resolve(null);
       }
+      cleanup();
     }
   });
 }

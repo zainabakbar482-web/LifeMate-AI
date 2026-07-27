@@ -287,7 +287,7 @@ app.post('/api/auth/register', (req, res) => {
     }
 
     const db = loadDB();
-    const existing = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase().trim());
+    const existing = db.users.find((u) => u && u.email && u.email.toLowerCase() === String(email).toLowerCase().trim());
     if (existing) {
       res.status(400).json({ error: 'Email is already registered' });
       return;
@@ -333,7 +333,7 @@ app.post('/api/auth/login', (req, res) => {
     }
 
     const db = loadDB();
-    const user = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase().trim());
+    const user = db.users.find((u) => u && u.email && u.email.toLowerCase() === String(email).toLowerCase().trim());
 
     if (!user || !verifyPassword(String(password), user.passwordHash)) {
       res.status(401).json({ error: 'Invalid email or password' });
@@ -359,7 +359,7 @@ app.post('/api/auth/verify-email', (req, res) => {
     }
 
     const db = loadDB();
-    const userIndex = db.users.findIndex((u) => u.email.toLowerCase() === String(email).toLowerCase().trim());
+    const userIndex = db.users.findIndex((u) => u && u.email && u.email.toLowerCase() === String(email).toLowerCase().trim());
 
     if (userIndex === -1) {
       res.status(404).json({ error: 'User not found' });
