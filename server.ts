@@ -229,6 +229,14 @@ app.use((req, res, next) => {
   next();
 });
 
+// Normalize URL for Vercel serverless function rewrites
+app.use((req, res, next) => {
+  if (req.url && !req.url.startsWith('/api/') && req.url !== '/api') {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Auth Middleware
@@ -1069,6 +1077,17 @@ app.delete('/api/documents/:id', authenticateToken, (req: AuthenticatedRequest, 
 // Guaranteed JSON 404 handler for API routes
 app.all('/api/*', (req: Request, res: Response) => {
   res.status(404).json({ error: `API route '${req.path}' not found` });
+});
+
+// Global Express Error Handler for API routes
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('Express API Error Handler caught error:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || err.statusCode || 500).json({
+    error: err.message || 'An unexpected server error occurred',
+  });
 });
 
 // VITE MIDDLEWARE FOR DEV & STATIC SERVING FOR PRODUCTION

@@ -101,9 +101,9 @@ export function loadDB(): DBData {
 
 export function saveDB(data: DBData): void {
   inMemoryDB = data;
-  ensureDBDir();
-  const tmpFile = `${DB_FILE}.tmp`;
   try {
+    ensureDBDir();
+    const tmpFile = `${DB_FILE}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
     try {
       fs.renameSync(tmpFile, DB_FILE);
@@ -120,11 +120,21 @@ export function saveDB(data: DBData): void {
 
 // Password hashing utility using native Node crypto scrypt
 export function hashPassword(password: string): string {
-  const salt = 'lifemate_salt_2026_safe';
-  return crypto.scryptSync(password, salt, 64).toString('hex');
+  try {
+    const salt = 'lifemate_salt_2026_safe';
+    const pwdStr = String(password || '');
+    return crypto.scryptSync(pwdStr, salt, 64).toString('hex');
+  } catch (err) {
+    console.error('Password hash computation fallback:', err);
+    return 'pwd_hash_' + String(password);
+  }
 }
 
 export function verifyPassword(password: string, hash: string): boolean {
-  return hashPassword(password) === hash;
+  try {
+    return hashPassword(password) === hash;
+  } catch {
+    return false;
+  }
 }
 
