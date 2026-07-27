@@ -18,12 +18,22 @@ interface DBData {
   studySessions: StudySession[];
 }
 
-const DB_DIR = path.join(process.cwd(), 'data');
+// In-memory DB cache for serverless environments
+let inMemoryDB: DBData | null = null;
+
+// Determine writable directory for Serverless (Vercel uses /tmp)
+const isServerless = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DB_DIR = isServerless ? path.join('/tmp', 'lifemate_data') : path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
+const SEED_FILE = path.join(process.cwd(), 'data', 'db.json');
 
 function ensureDBDir() {
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DB_DIR)) {
+      fs.mkdirSync(DB_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not create DB directory (serverless filesystem constraint):', err);
   }
 }
 
@@ -39,37 +49,58 @@ function getInitialDB(): DBData {
 }
 
 export function loadDB(): DBData {
+  if (inMemoryDB) {
+    return inMemoryDB;
+  }
+
   ensureDBDir();
-  if (!fs.existsSync(DB_FILE)) {
-    const initial = getInitialDB();
-    saveDB(initial);
-    return initial;
-  }
+
+  let raw: string | null = null;
+
+  // Attempt 1: Read from writable runtime DB_FILE (/tmp/lifemate_data/db.json)
   try {
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    if (!raw || !raw.trim()) {
-      const initial = getInitialDB();
-      saveDB(initial);
-      return initial;
+    if (fs.existsSync(DB_FILE)) {
+      raw = fs.readFileSync(DB_FILE, 'utf-8');
     }
-    const parsed = JSON.parse(raw);
-    return {
-      users: Array.isArray(parsed?.users) ? parsed.users : [],
-      conversations: Array.isArray(parsed?.conversations) ? parsed.conversations : [],
-      messages: Array.isArray(parsed?.messages) ? parsed.messages : [],
-      tasks: Array.isArray(parsed?.tasks) ? parsed.tasks : [],
-      documents: Array.isArray(parsed?.documents) ? parsed.documents : [],
-      studySessions: Array.isArray(parsed?.studySessions) ? parsed.studySessions : [],
-    };
   } catch (err) {
-    console.error('Error reading db.json, repairing with fresh DB format:', err);
-    const initial = getInitialDB();
-    saveDB(initial);
-    return initial;
+    console.warn('Could not read runtime DB file:', err);
   }
+
+  // Attempt 2: Read from static seed file bundled in project
+  if (!raw) {
+    try {
+      if (fs.existsSync(SEED_FILE)) {
+        raw = fs.readFileSync(SEED_FILE, 'utf-8');
+      }
+    } catch (err) {
+      console.warn('Could not read seed DB file:', err);
+    }
+  }
+
+  if (raw && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      inMemoryDB = {
+        users: Array.isArray(parsed?.users) ? parsed.users : [],
+        conversations: Array.isArray(parsed?.conversations) ? parsed.conversations : [],
+        messages: Array.isArray(parsed?.messages) ? parsed.messages : [],
+        tasks: Array.isArray(parsed?.tasks) ? parsed.tasks : [],
+        documents: Array.isArray(parsed?.documents) ? parsed.documents : [],
+        studySessions: Array.isArray(parsed?.studySessions) ? parsed.studySessions : [],
+      };
+      return inMemoryDB;
+    } catch (err) {
+      console.error('Error parsing db json, initializing fresh DB:', err);
+    }
+  }
+
+  inMemoryDB = getInitialDB();
+  saveDB(inMemoryDB);
+  return inMemoryDB;
 }
 
 export function saveDB(data: DBData): void {
+  inMemoryDB = data;
   ensureDBDir();
   const tmpFile = `${DB_FILE}.tmp`;
   try {
@@ -83,7 +114,7 @@ export function saveDB(data: DBData): void {
       }
     }
   } catch (err) {
-    console.error('Error saving database to db.json:', err);
+    console.warn('Filesystem write not allowed on serverless platform, relying on in-memory store:', err);
   }
 }
 
@@ -96,3 +127,4 @@ export function hashPassword(password: string): string {
 export function verifyPassword(password: string, hash: string): boolean {
   return hashPassword(password) === hash;
 }
+

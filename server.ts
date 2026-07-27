@@ -264,98 +264,114 @@ app.get('/api/health', (req, res) => {
 
 // AUTH ENDPOINTS
 app.post('/api/auth/register', (req, res) => {
-  const { email, password, fullName, userType } = req.body;
+  try {
+    const { email, password, fullName, userType } = req.body || {};
 
-  if (!email || !password || !fullName || !userType) {
-    res.status(400).json({ error: 'All fields are required' });
-    return;
+    if (!email || !password || !fullName || !userType) {
+      res.status(400).json({ error: 'All fields are required' });
+      return;
+    }
+
+    const db = loadDB();
+    const existing = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase().trim());
+    if (existing) {
+      res.status(400).json({ error: 'Email is already registered' });
+      return;
+    }
+
+    // Generate 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const userId = 'user_' + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36));
+
+    const newUser: DBUser = {
+      id: userId,
+      email: String(email).toLowerCase().trim(),
+      passwordHash: hashPassword(String(password)),
+      fullName: String(fullName).trim(),
+      userType,
+      isVerified: false,
+      verificationCode,
+      languagePref: 'English' as const,
+      themePref: 'system' as const,
+      notificationsEnabled: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    db.users.push(newUser);
+    saveDB(db);
+
+    const token = jwt.sign({ id: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ token, user: sanitizeUser(newUser), verificationCode });
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: err?.message || 'Internal server error during registration' });
   }
-
-  const db = loadDB();
-  const existing = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim());
-  if (existing) {
-    res.status(400).json({ error: 'Email is already registered' });
-    return;
-  }
-
-  // Generate 6-digit verification code
-  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-  const newUser: DBUser = {
-    id: 'user_' + crypto.randomUUID(),
-    email: email.toLowerCase().trim(),
-    passwordHash: hashPassword(password),
-    fullName: fullName.trim(),
-    userType,
-    isVerified: false,
-    verificationCode,
-    languagePref: 'English' as const,
-    themePref: 'system' as const,
-    notificationsEnabled: true,
-    createdAt: new Date().toISOString(),
-  };
-
-  db.users.push(newUser);
-  saveDB(db);
-
-  const token = jwt.sign({ id: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '7d' });
-
-  res.json({ token, user: sanitizeUser(newUser), verificationCode });
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body || {};
 
-  if (!email || !password) {
-    res.status(400).json({ error: 'Email and password are required' });
-    return;
+    if (!email || !password) {
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
+    }
+
+    const db = loadDB();
+    const user = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase().trim());
+
+    if (!user || !verifyPassword(String(password), user.passwordHash)) {
+      res.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ token, user: sanitizeUser(user) });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: err?.message || 'Internal server error during login' });
   }
-
-  const db = loadDB();
-  const user = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim());
-
-  if (!user || !verifyPassword(password, user.passwordHash)) {
-    res.status(401).json({ error: 'Invalid email or password' });
-    return;
-  }
-
-  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-
-  res.json({ token, user: sanitizeUser(user) });
 });
 
 app.post('/api/auth/verify-email', (req, res) => {
-  const { email, code } = req.body;
+  try {
+    const { email, code } = req.body || {};
 
-  if (!email || !code) {
-    res.status(400).json({ error: 'Email and verification code are required' });
-    return;
+    if (!email || !code) {
+      res.status(400).json({ error: 'Email and verification code are required' });
+      return;
+    }
+
+    const db = loadDB();
+    const userIndex = db.users.findIndex((u) => u.email.toLowerCase() === String(email).toLowerCase().trim());
+
+    if (userIndex === -1) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const user = db.users[userIndex];
+    if (user.isVerified) {
+      res.json({ message: 'Email is already verified', user: sanitizeUser(user) });
+      return;
+    }
+
+    if (user.verificationCode && user.verificationCode !== String(code).trim()) {
+      res.status(400).json({ error: 'Invalid verification code' });
+      return;
+    }
+
+    db.users[userIndex].isVerified = true;
+    delete db.users[userIndex].verificationCode;
+    saveDB(db);
+
+    res.json({ message: 'Email verified successfully!', user: sanitizeUser(db.users[userIndex]) });
+  } catch (err: any) {
+    console.error('Verification error:', err);
+    res.status(500).json({ error: err?.message || 'Internal server error during verification' });
   }
-
-  const db = loadDB();
-  const userIndex = db.users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase().trim());
-
-  if (userIndex === -1) {
-    res.status(404).json({ error: 'User not found' });
-    return;
-  }
-
-  const user = db.users[userIndex];
-  if (user.isVerified) {
-    res.json({ message: 'Email is already verified', user: sanitizeUser(user) });
-    return;
-  }
-
-  if (user.verificationCode && user.verificationCode !== code.trim()) {
-    res.status(400).json({ error: 'Invalid verification code' });
-    return;
-  }
-
-  db.users[userIndex].isVerified = true;
-  delete db.users[userIndex].verificationCode;
-  saveDB(db);
-
-  res.json({ message: 'Email verified successfully!', user: sanitizeUser(db.users[userIndex]) });
 });
 
 app.post('/api/auth/resend-verification', (req, res) => {
