@@ -37,15 +37,43 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(endpoint, {
+  const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env;
+  const baseUrl = (metaEnv?.VITE_API_BASE_URL || '').replace(/\/$/, '');
+  const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+
+  const res = await fetch(url, {
     ...options,
     headers,
   });
 
-  const data = await res.json();
+  const contentType = res.headers.get('content-type') || '';
+  let data: any = {};
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = await res.json();
+    } catch {
+      data = { error: 'Server returned an invalid JSON response' };
+    }
+  } else {
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!res.ok) {
+        if (text.includes('<!DOCTYPE') || text.includes('<html') || text.includes('The page')) {
+          throw new Error(
+            `Backend API route '${endpoint}' returned HTML (Status ${res.status}). Please check Vercel deployment configuration.`
+          );
+        }
+        throw new Error(`Server error (${res.status}): ${text.slice(0, 100) || res.statusText}`);
+      }
+      data = { message: text };
+    }
+  }
 
   if (!res.ok) {
-    throw new Error(data.error || 'An unexpected error occurred');
+    throw new Error(data.error || data.message || `Request failed with status ${res.status}`);
   }
 
   return data as T;
