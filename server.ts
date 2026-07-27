@@ -389,126 +389,156 @@ app.post('/api/auth/verify-email', (req, res) => {
 });
 
 app.post('/api/auth/resend-verification', (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    res.status(400).json({ error: 'Email is required' });
-    return;
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      res.status(400).json({ error: 'Email is required' });
+      return;
+    }
+
+    const db = loadDB();
+    const userIndex = db.users.findIndex((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase().trim());
+
+    if (userIndex === -1) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+    db.users[userIndex].verificationCode = newCode;
+    saveDB(db);
+
+    res.json({
+      message: `A new 6-digit verification code has been generated for ${email}`,
+      verificationCode: newCode,
+    });
+  } catch (err: any) {
+    console.error('Resend verification error:', err);
+    res.status(500).json({ error: err?.message || 'Server error during verification code resend' });
   }
-
-  const db = loadDB();
-  const userIndex = db.users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase().trim());
-
-  if (userIndex === -1) {
-    res.status(404).json({ error: 'User not found' });
-    return;
-  }
-
-  const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-  db.users[userIndex].verificationCode = newCode;
-  saveDB(db);
-
-  res.json({
-    message: `A new 6-digit verification code has been generated for ${email}`,
-    verificationCode: newCode,
-  });
 });
 
 app.get('/api/auth/me', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
-  const db = loadDB();
-  const user = db.users.find((u) => u.id === req.user?.id);
+  try {
+    const db = loadDB();
+    const user = db.users.find((u) => u.id === req.user?.id);
 
-  if (!user) {
-    res.status(404).json({ error: 'User not found' });
-    return;
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.json(sanitizeUser(user));
+  } catch (err: any) {
+    console.error('Get profile error:', err);
+    res.status(500).json({ error: err?.message || 'Server error fetching user profile' });
   }
-
-  res.json(sanitizeUser(user));
 });
 
 app.put('/api/auth/update-profile', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
-  const { fullName, userType } = req.body;
-  const db = loadDB();
-  const userIndex = db.users.findIndex((u) => u.id === req.user?.id);
+  try {
+    const { fullName, userType } = req.body || {};
+    const db = loadDB();
+    const userIndex = db.users.findIndex((u) => u.id === req.user?.id);
 
-  if (userIndex === -1) {
-    res.status(404).json({ error: 'User not found' });
-    return;
+    if (userIndex === -1) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (fullName) db.users[userIndex].fullName = String(fullName).trim();
+    if (userType) db.users[userIndex].userType = userType;
+
+    saveDB(db);
+
+    res.json(sanitizeUser(db.users[userIndex]));
+  } catch (err: any) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ error: err?.message || 'Server error updating profile' });
   }
-
-  if (fullName) db.users[userIndex].fullName = fullName;
-  if (userType) db.users[userIndex].userType = userType;
-
-  saveDB(db);
-
-  res.json(sanitizeUser(db.users[userIndex]));
 });
 
 app.post('/api/auth/forgot-password', (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    res.status(400).json({ error: 'Email is required' });
-    return;
-  }
-  const db = loadDB();
-  const userIndex = db.users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase().trim());
-  
-  if (userIndex === -1) {
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      res.status(400).json({ error: 'Email is required' });
+      return;
+    }
+    const db = loadDB();
+    const userIndex = db.users.findIndex((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase().trim());
+    
+    if (userIndex === -1) {
+      res.json({
+        message: 'If that email address exists in our system, a password reset link has been sent.',
+      });
+      return;
+    }
+
+    const resetToken = 'RST-' + Math.floor(100000 + Math.random() * 900000).toString();
+    db.users[userIndex].resetToken = resetToken;
+    saveDB(db);
+
     res.json({
-      message: 'If that email address exists in our system, a password reset link has been sent.',
+      message: `Password reset instructions sent to ${email}`,
+      simulationToken: resetToken,
     });
-    return;
+  } catch (err: any) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: err?.message || 'Server error processing password reset request' });
   }
-
-  const resetToken = 'RST-' + Math.floor(100000 + Math.random() * 900000).toString();
-  db.users[userIndex].resetToken = resetToken;
-  saveDB(db);
-
-  res.json({
-    message: `Password reset instructions sent to ${email}`,
-    simulationToken: resetToken,
-  });
 });
 
 app.post('/api/auth/reset-password', (req, res) => {
-  const { email, resetToken, newPassword } = req.body;
-  if (!email || !newPassword) {
-    res.status(400).json({ error: 'Email and new password are required' });
-    return;
+  try {
+    const { email, resetToken, newPassword } = req.body || {};
+    if (!email || !newPassword) {
+      res.status(400).json({ error: 'Email and new password are required' });
+      return;
+    }
+    const db = loadDB();
+    const userIndex = db.users.findIndex((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase().trim());
+
+    if (userIndex === -1) {
+      res.status(400).json({ error: 'User not found or invalid request' });
+      return;
+    }
+
+    const user = db.users[userIndex];
+    if (resetToken && user.resetToken && user.resetToken !== String(resetToken).trim()) {
+      res.status(400).json({ error: 'Invalid or expired password reset token' });
+      return;
+    }
+
+    db.users[userIndex].passwordHash = hashPassword(String(newPassword));
+    delete db.users[userIndex].resetToken;
+    saveDB(db);
+
+    res.json({ message: 'Password has been successfully reset. You can now login.' });
+  } catch (err: any) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: err?.message || 'Server error resetting password' });
   }
-  const db = loadDB();
-  const userIndex = db.users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase().trim());
-
-  if (userIndex === -1) {
-    res.status(400).json({ error: 'User not found or invalid request' });
-    return;
-  }
-
-  const user = db.users[userIndex];
-  if (resetToken && user.resetToken && user.resetToken !== resetToken.trim()) {
-    res.status(400).json({ error: 'Invalid or expired password reset token' });
-    return;
-  }
-
-  db.users[userIndex].passwordHash = hashPassword(newPassword);
-  delete db.users[userIndex].resetToken;
-  saveDB(db);
-
-  res.json({ message: 'Password has been successfully reset. You can now login.' });
 });
 
 app.delete('/api/auth/delete-account', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user?.id;
-  const db = loadDB();
+  try {
+    const userId = req.user?.id;
+    const db = loadDB();
 
-  db.users = db.users.filter((u) => u.id !== userId);
-  db.conversations = db.conversations.filter((c) => c.userId !== userId);
-  db.messages = db.messages.filter((m) => m.userId !== userId);
-  db.tasks = db.tasks.filter((t) => t.userId !== userId);
-  db.documents = db.documents.filter((d) => d.userId !== userId);
-  db.studySessions = db.studySessions.filter((s) => s.userId !== userId);
+    db.users = (db.users || []).filter((u) => u.id !== userId);
+    db.conversations = (db.conversations || []).filter((c) => c.userId !== userId);
+    db.messages = (db.messages || []).filter((m) => m.userId !== userId);
+    db.tasks = (db.tasks || []).filter((t) => t.userId !== userId);
+    db.documents = (db.documents || []).filter((d) => d.userId !== userId);
+    db.studySessions = (db.studySessions || []).filter((s) => s.userId !== userId);
 
-  saveDB(db);
-  res.json({ message: 'Account and associated data deleted successfully.' });
+    saveDB(db);
+    res.json({ message: 'Account and associated data deleted successfully.' });
+  } catch (err: any) {
+    console.error('Delete account error:', err);
+    res.status(500).json({ error: err?.message || 'Server error deleting account' });
+  }
 });
 
 // SETTINGS ENDPOINTS
