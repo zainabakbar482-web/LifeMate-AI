@@ -1,8 +1,7 @@
-import app from "../server/index.js";
+import app from "../server";
 
 export default function handler(req: any, res: any) {
   try {
-    // Preserve original URL from Vercel headers
     const originalUrl =
       req.headers?.["x-forwarded-uri"] ||
       req.headers?.["x-invoke-path"] ||
@@ -11,33 +10,30 @@ export default function handler(req: any, res: any) {
       req.headers?.["x-original-url"] ||
       req.url;
 
-    if (originalUrl && typeof originalUrl === "string") {
+    if (typeof originalUrl === "string") {
       req.url = originalUrl;
     }
 
-    // Ensure API routes start with /api
-    if (req.url && !req.url.startsWith("/api/") && req.url !== "/api") {
-      req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
+    if (req.url && !req.url.startsWith("/api")) {
+      req.url = `/api${req.url}`;
     }
 
-    // Parse JSON body if needed
     if (typeof req.body === "string" && req.body.trim()) {
       try {
         req.body = JSON.parse(req.body);
       } catch {
-        console.log("Invalid JSON body");
+        req.body = req.body;
       }
     }
 
-    // Send request to Express app
     return app(req, res);
 
   } catch (error: any) {
-    console.error("Vercel Function Error:", error);
+    console.error("Serverless Function Error:", error);
 
     if (!res.headersSent) {
-      return res.status(500).json({
-        error: error?.message || "Server error occurred",
+      res.status(500).json({
+        error: error.message || "Internal Server Error",
       });
     }
   }
