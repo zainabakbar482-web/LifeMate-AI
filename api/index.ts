@@ -1,10 +1,8 @@
 import app from "../server/index.js";
 
 export default function handler(req: any, res: any) {
-  const cleanup = () => {};
-
   try {
-    // Preserve original API URL from Vercel headers
+    // Preserve original URL from Vercel headers
     const originalUrl =
       req.headers?.["x-forwarded-uri"] ||
       req.headers?.["x-invoke-path"] ||
@@ -27,11 +25,11 @@ export default function handler(req: any, res: any) {
       try {
         req.body = JSON.parse(req.body);
       } catch {
-        console.log("Body is not valid JSON");
+        console.log("Invalid JSON body");
       }
     }
 
-    // Run Express app
+    // Send request to Express app
     return app(req, res);
 
   } catch (error: any) {
