@@ -2,61 +2,34 @@ import { Request, Response } from 'express';
 import app from '../server';
 
 export default function handler(req: any, res: any) {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 8000);
-    const cleanup = () => {
-      clearTimeout(timer);
-      resolve(null);
-    };
+  try {
+    // Preserve requested API path on Vercel rewrites
+    const originalUrl =
+      req.headers?.['x-forwarded-uri'] ||
+      req.headers?.['x-real-url'] ||
+      req.headers?.['x-original-url'] ||
+      req.url;
 
-    // Resolve promise when serverless response finishes or closes
-    res.on('finish', cleanup);
-    res.on('close', cleanup);
-    res.on('error', (err: any) => {
-      console.error('Vercel serverless response stream error:', err);
-      cleanup();
-    });
-
-    try {
-      // 1. Resolve original URL from Vercel proxy headers if present
-      const originalUrl =
-        req.headers?.['x-forwarded-uri'] ||
-        req.headers?.['x-invoke-path'] ||
-        req.headers?.['x-matched-path'] ||
-        req.headers?.['x-real-url'] ||
-        req.headers?.['x-original-url'] ||
-        req.url;
-
-      if (originalUrl && typeof originalUrl === 'string') {
-        req.url = originalUrl;
-      }
-
-      // Ensure API routes start with /api
-      if (req.url && !req.url.startsWith('/api/') && req.url !== '/api') {
-        req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
-      }
-
-      // 2. Parse body if passed as raw JSON string by serverless runtime
-      if (typeof req.body === 'string' && req.body.trim()) {
-        try {
-          req.body = JSON.parse(req.body);
-        } catch {
-          // Keep raw string if parsing fails
-        }
-      }
-
-      // 3. Delegate request execution to Express app
-      app(req, res);
-    } catch (error: any) {
-      console.error('Vercel Serverless Function Execution Error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: error?.message || 'A server error occurred during function invocation.',
-        });
-      }
-      cleanup();
+    if (originalUrl && typeof originalUrl === 'string' && originalUrl.startsWith('/api')) {
+      req.url = originalUrl;
     }
-  });
+
+    // Ensure URL begins with /api
+    if (req.url && !req.url.startsWith('/api/') && req.url !== '/api') {
+      req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+    }
+
+    // Invoke Express app directly
+    return app(req, res);
+  } catch (error: any) {
+    console.error('Vercel Serverless Function Handler Error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: error?.message || 'A server error occurred during function invocation.',
+      });
+    }
+  }
 }
+
 
 
